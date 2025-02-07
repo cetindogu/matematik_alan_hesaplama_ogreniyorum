@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Alan Hesaplama Soru Motoru - Animasyonlu</title>
+  <!-- FontAwesome CDN (ikonlar için) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" 
+        integrity="sha512-kNUXrVz9A+U+ODL5AQH9xJZ3kYZ/NEaHl3N5Q5qjXGJ6uYghnqT1E3zFkeq/Jp9k2j6A8yHQk6N0YIG6R5GdKw==" 
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- Canvas-Confetti CDN (konfeti efekti için) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8f8f8;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    #question {
+      font-size: 1.2em;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .choices {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .choice {
+      background: #007BFF;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1em;
+      transition: background 0.3s;
+    }
+    .choice:hover {
+      background: #0056b3;
+    }
+    .choice:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #feedback {
+      text-align: center;
+      margin-bottom: 10px;
+      font-weight: bold;
+      font-size: 1.2em;
+    }
+    /* Animasyon tablosu için stil */
+    #animationText {
+      width: 100%;
+      margin: 0 auto 20px;
+      font-size: 1em;
+      color: #333;
+    }
+    #animationText table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: center;
+    }
+    #animationText th, #animationText td {
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+    #animationText th {
+      background-color: #f2f2f2;
+    }
+    #drawingArea {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    svg {
+      border: 1px solid #ccc;
+      background: #fafafa;
+    }
+    #nextQuestionButton {
+      display: none;
+      margin: 0 auto;
+      padding: 10px 20px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1em;
+    }
+    #nextQuestionButton:hover {
+      background: #218838;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Alan Hesaplama Soru Motoru</h1>
+    <div id="questionArea">
+      <div id="question"></div>
+      <div class="choices" id="choices"></div>
+    </div>
+    <div id="feedback"></div>
+    <div id="drawingArea">
+      <!-- Çizim için SVG alanı -->
+      <svg id="drawing" width="300" height="300"></svg>
+    </div>
+    <div id="animationText"></div>
+    <!-- Sonraki Soru Butonu -->
+    <div style="text-align:center;">
+      <button id="nextQuestionButton" onclick="displayQuestion()">Sonraki Soru</button>
+    </div>
+  </div>
+
+  <!-- Doğru ve yanlış cevap sesleri -->
+  <audio id="correctAudio">
+    <source src="rightanswer.mp3" type="audio/mpeg">
+    Tarayıcınız ses formatını desteklemiyor.
+  </audio>
+  <audio id="wrongAudio">
+    <source src="wronganswer.mp3" type="audio/mpeg">
+    Tarayıcınız ses formatını desteklemiyor.
+  </audio>
+
+  <script>
+    const svgNS = "http://www.w3.org/2000/svg";
+    const scale = 20; // 1 cm = 20 px
+    let currentQuestion = null;
+
+    // Rastgele kare veya dikdörtgen alanı sorusu üretir (5. sınıf seviyesine uygun)
+    function generateRandomQuestion() {
+      const questionType = Math.random() < 0.5 ? "square" : "rectangle";
+      if (questionType === "square") {
+        const side = Math.floor(Math.random() * 8) + 3; // 3 - 10 arası
+        return {
+          type: "square",
+          side: side,
+          questionText: `Bir kenarı ${side} cm olan karenin alanı kaç cm²'dir?`,
+          correctAnswer: side * side
+        };
+      } else {
+        const shortSide = Math.floor(Math.random() * 6) + 3; // 3 - 8 arası
+        const longSide = Math.floor(Math.random() * (12 - (shortSide + 1) + 1)) + (shortSide + 1); // kısa kenar +1 ile 12 arasında
+        return {
+          type: "rectangle",
+          shortSide: shortSide,
+          longSide: longSide,
+          questionText: `Kısa kenarı ${shortSide} cm, uzun kenarı ${longSide} cm olan dikdörtgenin alanı kaç cm²'dir?`,
+          correctAnswer: shortSide * longSide
+        };
+      }
+    }
+
+    // Doğru cevabı içeren ve ±2 farkla 4 seçenek üretir.
+    function generateOptions(correct) {
+      let options = [correct];
+      while(options.length < 4) {
+        let delta = Math.floor(Math.random() * 5) - 2; // -2, -1, 0, 1, 2
+        let opt = correct + delta;
+        if(opt !== correct && opt > 0 && !options.includes(opt)) {
+          options.push(opt);
+        }
+      }
+      // Rastgele karıştır
+      options.sort(() => Math.random() - 0.5);
+      return options;
+    }
+
+    // Soruyu ekrana basar.
+    function displayQuestion() {
+      // Sonraki Soru butonunu gizle
+      document.getElementById("nextQuestionButton").style.display = "none";
+      currentQuestion = generateRandomQuestion();
+      document.getElementById("question").textContent = currentQuestion.questionText;
+      const choicesDiv = document.getElementById("choices");
+      choicesDiv.innerHTML = "";
+      document.getElementById("feedback").textContent = "";
+      // Animasyon alanını tablo olarak hazırlıyoruz (tablo başlıkları alan hesaplamaya uygun)
+      document.getElementById("animationText").innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Adım</th>
+              <th>Satır Alanı (cm²)</th>
+              <th>Toplam Alan (cm²)</th>
+            </tr>
+          </thead>
+          <tbody id="animationTableBody">
+          </tbody>
+        </table>`;
+      clearSVG();
+
+      const options = generateOptions(currentQuestion.correctAnswer);
+      options.forEach(option => {
+        const btn = document.createElement("button");
+        btn.className = "choice";
+        btn.textContent = option;
+        btn.onclick = () => checkAnswer(option);
+        choicesDiv.appendChild(btn);
+      });
+    }
+
+    // Seçeneklere tıklandığında cevap kontrolü, butonlar devre dışı bırakılır, animasyon başlar.
+    function checkAnswer(selected) {
+      disableChoices();
+      const feedback = document.getElementById("feedback");
+      const isCorrect = (selected === currentQuestion.correctAnswer);
+      if (isCorrect) {
+        feedback.innerHTML = '<i class="fa-solid fa-check"></i> Doğru!';
+        feedback.style.color = "darkgreen";
+        // Konfeti efekti
+        confetti({
+          particleCount: 200,
+          spread: 120,
+          origin: { y: 0.6 }
+        });
+        // Doğru cevap sesi
+        document.getElementById("correctAudio").play();
+      } else {
+        feedback.innerHTML = '<i class="fa-solid fa-xmark"></i> Yanlış! Doğru cevap: ' + currentQuestion.correctAnswer;
+        feedback.style.color = "darkred";
+        // Yanlış cevap sesi
+        document.getElementById("wrongAudio").play();
+      }
+      animateAnswer(currentQuestion, () => {
+        // Animasyon tamamlandıktan sonra Sonraki Soru düğmesi gösterilir.
+        document.getElementById("nextQuestionButton").style.display = "inline-block";
+      }, isCorrect);
+    }
+
+    // Tüm seçenek butonlarını devre dışı bırakır.
+    function disableChoices() {
+      document.querySelectorAll(".choice").forEach(btn => btn.disabled = true);
+    }
+
+    // SVG alanını temizler.
+    function clearSVG() {
+      document.getElementById("drawing").innerHTML = "";
+    }
+
+    // Alan hesaplamasını adım adım animasyonla gösterir ve son adımda kenar uzunluklarını da etiketler.
+    // Kare için: grid'de her satırda 'side' hücre, dikdörtgen için: satır sayısı = kısa kenar, sütun sayısı = uzun kenar.
+    function animateAnswer(questionObj, callback, isCorrect) {
+      clearSVG();
+      const svg = document.getElementById("drawing");
+      const tableBody = document.getElementById("animationTableBody");
+      tableBody.innerHTML = "";
+      let rows, cols, rowArea, fillColor;
+      if (questionObj.type === "square") {
+        rows = questionObj.side;
+        cols = questionObj.side;
+        rowArea = questionObj.side; // Her satırda 'side' adet 1 cm²'lik hücre
+        fillColor = "lightblue";
+      } else if (questionObj.type === "rectangle") {
+        rows = questionObj.shortSide;
+        cols = questionObj.longSide;
+        rowArea = questionObj.longSide; // Her satırda 'longSide' adet hücre
+        fillColor = "lightgreen";
+      }
+      const gridWidth = cols * scale;
+      const gridHeight = rows * scale;
+      const offsetX = (svg.getAttribute("width") - gridWidth) / 2;
+      const offsetY = (svg.getAttribute("height") - gridHeight) / 2;
+      const delay = 1500; // Her satır için 1500 ms
+
+      for (let i = 0; i < rows; i++) {
+        setTimeout(() => {
+          // Satırdaki hücreleri çiz
+          for (let j = 0; j < cols; j++) {
+            const rect = document.createElementNS(svgNS, "rect");
+            rect.setAttribute("x", offsetX + j * scale);
+            rect.setAttribute("y", offsetY + i * scale);
+            rect.setAttribute("width", scale);
+            rect.setAttribute("height", scale);
+            rect.setAttribute("fill", fillColor);
+            rect.setAttribute("stroke", "black");
+            rect.setAttribute("stroke-width", "1");
+            svg.appendChild(rect);
+          }
+          // Tabloya adım bilgisi ekle
+          const totalArea = (i + 1) * rowArea;
+          tableBody.innerHTML += `<tr>
+            <td>${i + 1}</td>
+            <td>${rowArea}</td>
+            <td>${totalArea}</td>
+          </tr>`;
+          // Son satır tamamlandığında, bir ek adım olarak çizimin etrafına sınır çizip kenar uzunluklarını etiketle.
+          if (i === rows - 1) {
+            setTimeout(() => {
+              // Çizim alanını çevreleyen boundary (kırmızı sınır) çiziliyor.
+              const boundary = document.createElementNS(svgNS, "rect");
+              boundary.setAttribute("x", offsetX);
+              boundary.setAttribute("y", offsetY);
+              boundary.setAttribute("width", gridWidth);
+              boundary.setAttribute("height", gridHeight);
+              boundary.setAttribute("fill", "none");
+              boundary.setAttribute("stroke", "red");
+              boundary.setAttribute("stroke-width", "3");
+              svg.appendChild(boundary);
+
+              // Üst kenara (yatay) etiket ekleniyor.
+              const topLabel = document.createElementNS(svgNS, "text");
+              topLabel.setAttribute("x", offsetX + gridWidth / 2);
+              topLabel.setAttribute("y", offsetY - 5);
+              topLabel.setAttribute("text-anchor", "middle");
+              topLabel.setAttribute("font-size", "14");
+              topLabel.setAttribute("fill", "red");
+              topLabel.textContent = questionObj.type === "square" ? questionObj.side + " cm" : questionObj.longSide + " cm";
+              svg.appendChild(topLabel);
+
+              // Sol kenara (dikey) etiket ekleniyor.
+              const leftLabel = document.createElementNS(svgNS, "text");
+              leftLabel.setAttribute("x", offsetX - 5);
+              leftLabel.setAttribute("y", offsetY + gridHeight / 2);
+              leftLabel.setAttribute("text-anchor", "end");
+              leftLabel.setAttribute("font-size", "14");
+              leftLabel.setAttribute("fill", "red");
+              leftLabel.textContent = questionObj.type === "square" ? questionObj.side + " cm" : questionObj.shortSide + " cm";
+              svg.appendChild(leftLabel);
+
+              if(callback) callback();
+            }, delay);
+          }
+        }, delay * (i + 1));
+      }
+    }
+
+    // İlk soruyu başlat.
+    displayQuestion();
+  </script>
+</body>
+</html>
